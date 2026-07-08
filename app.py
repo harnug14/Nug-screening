@@ -12,7 +12,7 @@ st.write("Masukkan link video terbaru dari channel yang ingin Anda bedah.")
 api_key = st.text_input("Masukkan Gemini API Key Anda:", type="password")
 video_url = st.text_input("Masukkan URL Video YouTube:")
 
-# Fungsi mengambil ID Video (Sudah diperbaiki untuk mendukung YouTube Shorts & Link HP)
+# Fungsi mengambil ID Video (Mendukung YouTube Shorts & Link HP)
 def get_video_id(url):
     pattern = r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})'
     match = re.search(pattern, url)
@@ -28,9 +28,17 @@ if st.button("Mulai Analisis Mendalam"):
         else:
             with st.spinner("Sedang mengambil transkrip dan menganalisis... Mohon tunggu..."):
                 try:
-                    # 1. Ambil Transkrip Video
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
-                    text_transcript = " ".join([t['text'] for t in transcript_list])
+                    # 1. Ambil Daftar Transkrip Menggunakan Metode yang Lebih Stabil
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    
+                    # Coba cari bahasa Indonesia atau Inggris, kalau tidak ada ambil apa saja yang tersedia
+                    try:
+                        transcript = transcript_list.find_transcript(['id', 'en'])
+                    except:
+                        transcript = next(iter(transcript_list))
+                        
+                    transcript_data = transcript.fetch()
+                    text_transcript = " ".join([t['text'] for t in transcript_data])
                     
                     # 2. Hubungkan ke Gemini
                     genai.configure(api_key=api_key)
