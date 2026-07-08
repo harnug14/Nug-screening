@@ -7,75 +7,100 @@ import scrapetube
 # Tampilan Aplikasi di HP
 st.set_page_config(page_title="AI Channel Analyzer", page_icon="📊", layout="centered")
 st.title("📊 YouTube Channel Whole Strategy Analyzer")
-st.write("Masukkan link CHANNEL YouTube untuk membedah strategi konten mereka secara menyeluruh berdasarkan video-video terbaru.")
+st.write("Membedah strategi konten channel secara menyeluruh menggunakan AI.")
 
-# Input API Key & Link Channel
+# Input API Key
 api_key = st.text_input("Masukkan Gemini API Key Anda:", type="password")
-channel_url = st.text_input("Masukkan URL Channel YouTube (Contoh: https://www.youtube.com/@NamaChannel):")
+
+# Pilihan metode agar aplikasi anti-macet
+metode = st.radio("Pilih Metode Analisis Channel:", ["Otomatis (Pakai Link Channel)", "Manual (Masukkan 2-3 Link Video Channel Tersebut)"])
+
+channel_url = ""
+manual_links = ""
+
+if metode == "Otomatis (Pakai Link Channel)":
+    channel_url = st.text_input("Masukkan URL Channel YouTube (Contoh: https://www.youtube.com/@NamaChannel):")
+else:
+    manual_links = st.text_area("Masukkan 2 atau 3 Link Video bebas dari channel tersebut (pisahkan dengan koma atau baris baru):")
 
 if st.button("Mulai Analisis Menyeluruh"):
-    if not api_key or not channel_url:
-        st.error("Mohon isi API Key dan Link Channel dulu ya!")
+    if not api_key:
+        st.error("Mohon isi API Key Anda terlebih dahulu!")
+    elif metode == "Otomatis (Pakai Link Channel)" and not channel_url:
+        st.error("Mohon isi Link Channel Anda!")
+    elif metode == "Manual (Masukkan 2-3 Link Video Channel Tersebut)" and not manual_links:
+        st.error("Mohon isi beberapa Link Video yang ingin dianalisis!")
     else:
-        with st.spinner("Sedang mengintip data video terbaru dari channel... Mohon tunggu..."):
-            try:
-                # 1. Ambil 3 video terbaru dari channel menggunakan scrapetube
+        video_ids = []
+        
+        with st.spinner("Sedang mengumpulkan data video... Mohon tunggu..."):
+            if metode == "Otomatis (Pakai Link Channel)":
                 try:
-fixed_url = channel_url.strip()
-if not fixed_url.startswith(("http://", "https://")):
-    fixed_url = "https://" + fixed_url
-
-videos = scrapetube.get_channel(channel_url=fixed_url, limit=3)
+                    fixed_url = channel_url.strip()
+                    if not fixed_url.startswith(("http://", "https://")):
+                        fixed_url = "https://" + fixed_url
+                        
+                    videos = scrapetube.get_channel(channel_url=fixed_url, limit=3)
                     video_ids = [v['videoId'] for v in videos]
                 except Exception as e:
-                    st.error(f"Gagal mendeteksi channel. Pastikan URL channel benar. Detail: {str(e)}")
+                    st.error(f"Gagal mendeteksi channel secara otomatis: {str(e)}")
                     video_ids = []
+                
+                # JIKA YOUTUBE MEMBLOKIR (Daftar Video Kosong)
+                if not video_ids:
+                    st.error("⚠️ Server YouTube memblokir pemindaian otomatis untuk channel ini saat ini.")
+                    st.info("💡 **Solusi Gampang:** Silakan ubah pilihan di atas ke metode **'Manual'**, lalu masukkan 2 atau 3 link video dari channel tersebut. Cara ini dijamin langsung berhasil!")
+            
+            else:
+                # Ambil ID video dari input manual menggunakan Regex
+                urls = re.findall(r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})', manual_links)
+                video_ids = list(set(urls))[:3] # Ambil maksimal 3 video unik
+                if not video_ids:
+                    st.error("Tidak ditemukan ID video yang valid. Pastikan link video yang Anda masukkan benar.")
 
-                if video_ids:
-                    combined_transcripts = ""
-                    st.info(f"Berhasil menemukan {len(video_ids)} video terbaru. Sedang menarik seluruh transkrip...")
+        # JIKA VIDEO BERHASIL DIKUMPULKAN, LANJUTKAN PROSES TRANSKRIP & AI
+        if video_ids:
+            combined_transcripts = ""
+            with st.spinner(f"Berhasil mengunci {len(video_ids)} video. Sedang menarik seluruh transkrip..."):
+                for idx, v_id in enumerate(video_ids, 1):
+                    text_transcript = ""
+                    try:
+                        api_instance = YouTubeTranscriptApi()
+                        if hasattr(api_instance, 'fetch'):
+                            fetched = api_instance.fetch(v_id)
+                            text_transcript = " ".join([(item.text if hasattr(item, 'text') else item.get('text', '')) for item in fetched])
+                        elif hasattr(api_instance, 'list'):
+                            transcript_list = api_instance.list(v_id)
+                            first_transcript = next(iter(transcript_list))
+                            fetched = first_transcript.fetch()
+                            text_transcript = " ".join([(item.text if hasattr(item, 'text') else item.get('text', '')) for item in fetched])
+                    except Exception:
+                        pass
                     
-                    for idx, v_id in enumerate(video_ids, 1):
-                        text_transcript = ""
-                        # Ambil transkrip dengan metode multi-versi aman
+                    if not text_transcript:
                         try:
-                            api_instance = YouTubeTranscriptApi()
-                            if hasattr(api_instance, 'fetch'):
-                                fetched = api_instance.fetch(v_id)
-                                text_transcript = " ".join([(item.text if hasattr(item, 'text') else item.get('text', '')) for item in fetched])
-                            elif hasattr(api_instance, 'list'):
-                                transcript_list = api_instance.list(v_id)
-                                first_transcript = next(iter(transcript_list))
-                                fetched = first_transcript.fetch()
-                                text_transcript = " ".join([(item.text if hasattr(item, 'text') else item.get('text', '')) for item in fetched])
+                            if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                                fetched = YouTubeTranscriptApi.get_transcript(v_id)
+                                text_transcript = " ".join([item.get('text', '') for item in fetched])
+                            elif hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+                                transcript_list = YouTubeTranscriptApi.list_transcripts(v_id)
+                                try:
+                                    transcript = transcript_list.find_transcript(['id', 'en'])
+                                except:
+                                    transcript = next(iter(transcript_list))
+                                fetched = transcript.fetch()
+                                text_transcript = " ".join([item.get('text', '') for item in fetched])
                         except Exception:
                             pass
-                        
-                        if not text_transcript:
-                            try:
-                                if hasattr(YouTubeTranscriptApi, 'get_transcript'):
-                                    fetched = YouTubeTranscriptApi.get_transcript(v_id)
-                                    text_transcript = " ".join([item.get('text', '') for item in fetched])
-                                elif hasattr(YouTubeTranscriptApi, 'list_transcripts'):
-                                    transcript_list = YouTubeTranscriptApi.list_transcripts(v_id)
-                                    try:
-                                        transcript = transcript_list.find_transcript(['id', 'en'])
-                                    except:
-                                        transcript = next(iter(transcript_list))
-                                    fetched = transcript.fetch()
-                                    text_transcript = " ".join([item.get('text', '') for item in fetched])
-                            except Exception:
-                                pass
-                        
-                        if text_transcript:
-                            combined_transcripts += f"\n\n--- VIDEO KE-{idx} (ID: {v_id}) ---\n{text_transcript}"
                     
-                    if not combined_transcripts.strip():
-                        st.error("Waduh, tidak ada transkrip yang bisa diambil. Pastikan video terbaru di channel ini memiliki Subtitle/CC aktif.")
-                    else:
-                        st.write("🔄 Pola transkrip terkumpul! Sedang membedah strategi besar bersama Gemini...")
-                        
-                        # 2. Hubungkan ke Gemini (Menggunakan gemini-2.5-flash terbaru)
+                    if text_transcript:
+                        combined_transcripts += f"\n\n--- VIDEO KE-{idx} (ID: {v_id}) ---\n{text_transcript}"
+            
+            if not combined_transcripts.strip():
+                st.error("Waduh, tidak ada transkrip yang bisa ditarik dari video-video tersebut. Pastikan videonya memiliki Subtitle/CC yang aktif.")
+            else:
+                with st.spinner("🔄 Pola konten terkumpul! Sedang meracik strategi besar bersama Gemini..."):
+                    try:
                         genai.configure(api_key=api_key)
                         model = genai.GenerativeModel('gemini-2.5-flash')
                         
@@ -96,9 +121,8 @@ videos = scrapetube.get_channel(channel_url=fixed_url, limit=3)
                         """
                         
                         response = model.generate_content(prompt)
-                        
                         st.success("Analisis Gaya Channel Selesai!")
                         st.markdown("### 📋 Laporan Strategi Menyeluruh Channel:")
                         st.write(response.text)
-            except Exception as e:
-                st.error(f"Terjadi kesalahan sistem: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Gagal terhubung ke Gemini: {str(e)}")
