@@ -21,7 +21,11 @@ if st.button("Mulai Analisis Menyeluruh"):
             try:
                 # 1. Ambil 3 video terbaru dari channel menggunakan scrapetube
                 try:
-                    videos = scrapetube.get_channel(channel_url=channel_url, limit=3)
+fixed_url = channel_url.strip()
+if not fixed_url.startswith(("http://", "https://")):
+    fixed_url = "https://" + fixed_url
+
+videos = scrapetube.get_channel(channel_url=fixed_url, limit=3)
                     video_ids = [v['videoId'] for v in videos]
                 except Exception as e:
                     st.error(f"Gagal mendeteksi channel. Pastikan URL channel benar. Detail: {str(e)}")
