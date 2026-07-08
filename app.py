@@ -12,9 +12,9 @@ st.write("Masukkan link video terbaru dari channel yang ingin Anda bedah.")
 api_key = st.text_input("Masukkan Gemini API Key Anda:", type="password")
 video_url = st.text_input("Masukkan URL Video YouTube:")
 
-# Fungsi mengambil ID Video
+# Fungsi mengambil ID Video (Sudah diperbaiki untuk mendukung YouTube Shorts & Link HP)
 def get_video_id(url):
-    pattern = r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S+\?v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})'
+    pattern = r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})'
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
@@ -24,7 +24,7 @@ if st.button("Mulai Analisis Mendalam"):
     else:
         video_id = get_video_id(video_url)
         if not video_id:
-            st.error("Link video tidak valid.")
+            st.error("Link video tidak valid. Pastikan format link benar.")
         else:
             with st.spinner("Sedang mengambil transkrip dan menganalisis... Mohon tunggu..."):
                 try:
