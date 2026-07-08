@@ -1,7 +1,7 @@
 import streamlit as st
-from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
 import re
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # Tampilan Aplikasi di HP
 st.set_page_config(page_title="AI YT Analyzer", page_icon="📊", layout="centered")
@@ -28,19 +28,52 @@ if st.button("Mulai Analisis Mendalam"):
         else:
             with st.spinner("Sedang mengambil transkrip dan menganalisis... Mohon tunggu..."):
                 try:
-                    # 1. Ambil Daftar Transkrip Menggunakan Metode yang Lebih Stabil
-                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    text_transcript = ""
                     
-                    # Coba cari bahasa Indonesia atau Inggris, kalau tidak ada ambil apa saja yang tersedia
+                    # === STRATEGI DETEKSI MULTI-VERSI (ANTI-ERROR) ===
+                    
+                    # Cara 1: Menggunakan Object Instansiasi (Untuk Versi Terbaru)
                     try:
-                        transcript = transcript_list.find_transcript(['id', 'en'])
-                    except:
-                        transcript = next(iter(transcript_list))
-                        
-                    transcript_data = transcript.fetch()
-                    text_transcript = " ".join([t['text'] for t in transcript_data])
+                        api_instance = YouTubeTranscriptApi()
+                        if hasattr(api_instance, 'fetch'):
+                            fetched = api_instance.fetch(video_id)
+                            text_transcript = " ".join([
+                                (item.text if hasattr(item, 'text') else item.get('text', '')) 
+                                for item in fetched
+                            ])
+                        elif hasattr(api_instance, 'list'):
+                            transcript_list = api_instance.list(video_id)
+                            first_transcript = next(iter(transcript_list))
+                            fetched = first_transcript.fetch()
+                            text_transcript = " ".join([
+                                (item.text if hasattr(item, 'text') else item.get('text', '')) 
+                                for item in fetched
+                            ])
+                    except Exception:
+                        pass # Jika gagal/bukan versi baru, lanjut ke cara 2
                     
-                    # 2. Hubungkan ke Gemini
+                    # Cara 2: Menggunakan Class Method Langsung (Untuk Versi Lama)
+                    if not text_transcript:
+                        try:
+                            if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+                                fetched = YouTubeTranscriptApi.get_transcript(video_id)
+                                text_transcript = " ".join([item.get('text', '') for item in fetched])
+                            elif hasattr(YouTubeTranscriptApi, 'list_transcripts'):
+                                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                                try:
+                                    transcript = transcript_list.find_transcript(['id', 'en'])
+                                except:
+                                    transcript = next(iter(transcript_list))
+                                fetched = transcript.fetch()
+                                text_transcript = " ".join([item.get('text', '') for item in fetched])
+                        except Exception:
+                            pass
+
+                    # Jika semua metode ekstraksi gagal
+                    if not text_transcript:
+                        raise Exception("Transkrip tidak dapat ditarik. Pastikan video Shorts/Video tersebut memiliki Subtitle/CC yang aktif.")
+                    
+                    # Hubungkan ke Gemini
                     genai.configure(api_key=api_key)
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     
@@ -56,7 +89,6 @@ if st.button("Mulai Analisis Mendalam"):
                     Berikut teks transkripnya: {text_transcript}
                     """
                     
-                    # 3. Minta AI Jawab
                     response = model.generate_content(prompt)
                     
                     st.success("Analisis Selesai!")
