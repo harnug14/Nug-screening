@@ -36,29 +36,46 @@ if st.button("Mulai Analisis Menyeluruh"):
         with st.spinner("Sedang mengumpulkan data video... Mohon tunggu..."):
             if metode == "Otomatis (Pakai Link Channel)":
                 try:
-                    fixed_url = channel_url.strip()
-                    if not fixed_url.startswith(("http://", "https://")):
-                        fixed_url = "https://" + fixed_url
-                        
-                    videos = scrapetube.get_channel(channel_url=fixed_url, limit=3)
-                    video_ids = [v['videoId'] for v in videos]
+                    url_clean = channel_url.strip()
+                    
+                    # Sistem otomatis mengekstrak username (@...) atau channel ID dari URL
+                    username_match = re.search(r'youtube\.com\/(@[a-zA-Z0-9_\-\.]+)', url_clean)
+                    id_match = re.search(r'youtube\.com\/channel\/([a-zA-Z0-9_\-]+)', url_clean)
+                    
+                    if username_match:
+                        username = username_match.group(1)
+                        videos = scrapetube.get_channel(channel_username=username, limit=3)
+                        video_ids = [v['videoId'] for v in videos]
+                    elif id_match:
+                        channel_id = id_match.group(1)
+                        videos = scrapetube.get_channel(channel_id=channel_id, limit=3)
+                        video_ids = [v['videoId'] for v in videos]
+                    else:
+                        # Backup plan: jika user hanya mengetik @namachannel saja
+                        if "@" in url_clean:
+                            username = "@" + url_clean.split("@")[-1].split("/")[0]
+                            videos = scrapetube.get_channel(channel_username=username, limit=3)
+                            video_ids = [v['videoId'] for v in videos]
+                        else:
+                            st.error("Format link channel tidak dikenali. Pastikan menyertakan tanda '@' atau ID channel-nya ya!")
+                
                 except Exception as e:
                     st.error(f"Gagal mendeteksi channel secara otomatis: {str(e)}")
                     video_ids = []
                 
-                # JIKA YOUTUBE MEMBLOKIR (Daftar Video Kosong)
-                if not video_ids:
-                    st.error("⚠️ Server YouTube memblokir pemindaian otomatis untuk channel ini saat ini.")
-                    st.info("💡 **Solusi Gampang:** Silakan ubah pilihan di atas ke metode **'Manual'**, lalu masukkan 2 atau 3 link video dari channel tersebut. Cara ini dijamin langsung berhasil!")
+                # Jika YouTube tetap memblokir server Streamlit (kasus bot protection)
+                if not video_ids and not st.session_state.get('error_shown'):
+                    st.error("⚠️ Sistem otomatis diblokir oleh pihak YouTube.")
+                    st.info("💡 **Solusi Gampang & Pasti Berhasil:** Silakan beralih ke pilihan metode **'Manual'** di atas. Cukup masukkan 2 atau 3 link video acak dari channel tersebut. Cara ini 100% aman, kebal blokir, dan langsung jalan!")
             
             else:
-                # Ambil ID video dari input manual menggunakan Regex
+                # Mengambil ID video dari input manual menggunakan Regex
                 urls = re.findall(r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})', manual_links)
-                video_ids = list(set(urls))[:3] # Ambil maksimal 3 video unik
+                video_ids = list(set(urls))[:3]
                 if not video_ids:
-                    st.error("Tidak ditemukan ID video yang valid. Pastikan link video yang Anda masukkan benar.")
+                    st.error("Tidak ditemukan ID video yang valid. Pastikan link video yang dimasukkan benar.")
 
-        # JIKA VIDEO BERHASIL DIKUMPULKAN, LANJUTKAN PROSES TRANSKRIP & AI
+        # PROSES EKSTRAKSI TRANSKRIP & PENGIRIMAN KE GEMINI AI
         if video_ids:
             combined_transcripts = ""
             with st.spinner(f"Berhasil mengunci {len(video_ids)} video. Sedang menarik seluruh transkrip..."):
@@ -97,7 +114,7 @@ if st.button("Mulai Analisis Menyeluruh"):
                         combined_transcripts += f"\n\n--- VIDEO KE-{idx} (ID: {v_id}) ---\n{text_transcript}"
             
             if not combined_transcripts.strip():
-                st.error("Waduh, tidak ada transkrip yang bisa ditarik dari video-video tersebut. Pastikan videonya memiliki Subtitle/CC yang aktif.")
+                st.error("Waduh, transkrip gagal ditarik. Pastikan video-video dari channel ini memiliki Subtitle/CC yang aktif.")
             else:
                 with st.spinner("🔄 Pola konten terkumpul! Sedang meracik strategi besar bersama Gemini..."):
                     try:
