@@ -1,94 +1,77 @@
 import streamlit as st
 import google.generativeai as genai
-import re
-from youtube_transcript_api import YouTubeTranscriptApi
+import tempfile
+import os
+import time
 
-# Tampilan Aplikasi di HP
-st.set_page_config(page_title="AI Channel Analyzer", page_icon="📊", layout="centered")
-st.title("📊 YouTube Channel Strategy Analyzer")
-st.write("Bedah strategi konten sebuah channel dengan kekuatan Gemini AI.")
+# Tampilan Aplikasi
+st.set_page_config(page_title="AI Video Analyzer", page_icon="🎬", layout="centered")
+st.title("🎬 YouTube Video Whole Strategy Analyzer")
+st.write("Upload file video Anda. Gemini AI akan menonton, mendengar, dan membedah strategi editingnya.")
 
 # Input API Key
 api_key = st.text_input("Masukkan Gemini API Key Anda:", type="password")
 
-# Dua mode input untuk menjamin 100% keberhasilan aplikasi
-mode_input = st.radio("Pilih Cara Input Konten:", ["Otomatis (Lewat Link Video)", "Manual (Tempel Teks Transkrip/Subtitle)"])
+# Input File Video Beneran
+uploaded_file = st.file_uploader("Upload File Video Konten (MP4, MOV, atau AVI):", type=["mp4", "mov", "avi"])
 
-combined_transcripts = ""
+if st.button("Mulai Tonton & Bedah Video"):
+    if not api_key:
+        st.error("Mohon isi Gemini API Key Anda!")
+    elif not uploaded_file:
+        st.error("Mohon upload file videonya terlebih dahulu!")
+    else:
+        genai.configure(api_key=api_key)
+        
+        # 1. Simpan video ke file sementara di server Streamlit
+        with st.spinner("1/3: Menyimpan file video sementara..."):
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                tmp_path = tmp_file.name
 
-if mode_input == "Otomatis (Lewat Link Video)":
-    manual_links = st.text_area("Masukkan 2 atau 3 Link Video YouTube (pisahkan dengan baris baru atau koma):")
-    if st.button("Mulai Analisis Otomatis"):
-        if not api_key or not manual_links:
-            st.error("Mohon isi Gemini API Key dan Link Video dulu ya!")
-        else:
-            video_ids = re.findall(r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})', manual_links)
-            video_ids = list(set(video_ids))[:3]
-            
-            if not video_ids:
-                st.error("Link video tidak valid. Pastikan format tautannya benar.")
-            else:
-                with st.spinner("Sedang mencoba menarik transkrip otomatis dari server..."):
-                    for idx, v_id in enumerate(video_ids, 1):
-                        text_transcript = ""
-                        try:
-                            fetched = YouTubeTranscriptApi.get_transcript(v_id)
-                            text_transcript = " ".join([item.get('text', '') for item in fetched])
-                        except Exception:
-                            try:
-                                transcript_list = YouTubeTranscriptApi.list_transcripts(v_id)
-                                transcript = next(iter(transcript_list))
-                                text_transcript = " ".join([item.get('text', '') for item in transcript.fetch()])
-                            except Exception:
-                                pass
-                        
-                        if text_transcript:
-                            combined_transcripts += f"\n\n--- VIDEO KE-{idx} ---\n{text_transcript}"
-                
-                if not combined_transcripts.strip():
-                    st.error("❌ Waduh, server YouTube memblokir robot otomatis kami untuk mengambil transkrip.")
-                    st.info("💡 **Solusi Gampang & Anti-Gagal (Hanya 30 Detik):**\n1. Buka video YouTube tersebut di browser atau aplikasi HP Anda.\n2. Klik deskripsi video, lalu klik tombol **'Show Transcript'** (Tampilkan Transkrip) bawaan YouTube.\n3. Salin/copy teks transkrip tersebut, lalu pilih opsi **'Manual (Tempel Teks Transkrip/Subtitle)'** di atas untuk langsung diserahkan ke Gemini!")
-                else:
-                    st.session_state['transcripts'] = combined_transcripts
-
-else:
-    pasted_text = st.text_area("Tempel (Paste) teks transkrip atau percakapan video di sini (bisa gabungan dari beberapa video):", height=300)
-    if st.button("Mulai Analisis Manual"):
-        if not api_key or not pasted_text:
-            st.error("Mohon isi Gemini API Key dan tempel teks transkripnya dulu ya!")
-        else:
-            combined_transcripts = pasted_text
-            st.session_state['transcripts'] = combined_transcripts
-
-# PROSES KE GEMINI JIKA DATA TRANSKRIP SUDAH TERKUNCI
-if 'transcripts' in st.session_state and st.session_state['transcripts']:
-    with st.spinner("🔄 Pola konten terkumpul! Sedang membedah strategi besar bersama Gemini..."):
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            
-            prompt = f"""
-            Kamu adalah pakar strategi dan branding YouTube nomor 1 di dunia. 
-            Berikut adalah data transkrip/konten dari sebuah channel YouTube. 
-            Analisis seluruh data ini untuk membedah strategi CHANNEL mereka secara menyeluruh:
-            
-            1. **Niche & Identitas Channel**: Apa fokus utama channel ini? Apakah topik mereka konsisten antar konten?
-            2. **Pola Scripting & Hook**: Bagaimana formula mereka dalam membuat Hook di awal dan mempertahankan penonton?
-            3. **Analisis Content Pillars**: Pola atau sudut pandang apa yang selalu diulang dan menjadi pilar utama channel ini?
-            4. **Kelebihan & Rekomendasi Improvisasi**: Apa kekuatan utama mereka dan apa 3 strategi nyata yang harus dilakukan agar channel ini meledak 10x luap?
-            
-            Jawab dengan gaya bahasa profesional, tajam, namun mudah dipahami.
-            
-            Data Transkrip/Konten:
-            {st.session_state['transcripts']}
-            """
-            
-            response = model.generate_content(prompt)
-            st.success("Analisis Strategi Selesai!")
-            st.markdown("### 📋 Laporan Strategi Menyeluruh Channel:")
-            st.write(response.text)
-            
-            # Bersihkan session state setelah berhasil ditampilkan
-            del st.session_state['transcripts']
+            # 2. Upload video ke ekosistem Gemini agar bisa diproses AI
+            with st.spinner("2/3: Mengirim video ke Gemini AI untuk ditonton (Mohon tunggu beberapa saat)..."):
+                video_file = genai.upload_file(path=tmp_path)
+                
+                # Menunggu Google selesai memproses frame video
+                while video_file.state.name == "PROCESSING":
+                    time.sleep(3)
+                    video_file = genai.get_file(video_file.name)
+                
+                if video_file.state.name == "FAILED":
+                    st.error("Gemini gagal memproses format video ini.")
+                    st.stop()
+
+            # 3. Proses analisis video oleh Gemini
+            with st.spinner("3/3: 🧠 AI sedang menonton visual, mendengar audio, dan merumuskan strategi..."):
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                
+                prompt = """
+                Kamu adalah Sutradara, Creative Director, dan Video Editor YouTube nomor 1 di dunia.
+                Kamu baru saja selesai menonton video ini secara utuh. Bedah strategi kontennya secara blak-blakan dan tajam:
+                
+                1. **Analisis Visual Hook & Pacing**: Bagaimana video ini memanfaatkan 3 detik pertamanya secara visual untuk mengunci mata penonton? Bagaimana ritme perpindahan antar adegannya (pacing)?
+                2. **Gaya Editing & Grafis**: Bedah penggunaan teks di layar (captions), efek transisi, b-roll, warna, dan elemen grafis yang mereka pakai. Apa rahasia yang bikin video ini tidak membosankan?
+                3. **Sound Design & Audio**: Bagaimana peran musik latar (BGM) dan efek suara (SFX) dalam membangun emosi penonton di video ini?
+                4. **Rumus Sukses Yang Bisa Dicontek**: Berikan 3 poin penting dari gaya video ini yang wajib ditiru atau dikembangkan agar retensi penonton melesat tinggi.
+                
+                Jawab langsung ke inti poinnya, profesional, tanpa basa-basi teori.
+                """
+                
+                response = model.generate_content([prompt, video_file])
+                
+                st.success("Analisis Video Selesai!")
+                st.markdown("### 📋 Hasil Laporan Bedah Video Menyeluruh:")
+                st.write(response.text)
+                
+                # Hapus file dari server Google setelah selesai biar bersih
+                genai.delete_file(video_file.name)
+
         except Exception as e:
-            st.error(f"Gagal terhubung ke Gemini: {str(e)}")
+            st.error(f"Terjadi kesalahan saat memproses video: {str(e)}")
+        
+        finally:
+            # Bersihkan file sampah di server lokal Streamlit
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
